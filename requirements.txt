@@ -1,0 +1,29 @@
+# AI Code Analyzer Agent — Python Dependencies
+# Compatible with Python 3.12+, including Python 3.14
+# Use: pip install -r requirements.txt --only-binary :all:
+
+# ── API Framework ────────────────────────────────────────────
+fastapi>=0.115.6
+uvicorn[standard]>=0.32.1
+python-multipart>=0.0.18
+
+# ── LangGraph / LangChain ───────────────────────────────────
+langgraph>=0.2.60
+langgraph-checkpoint-postgres>=2.0.0
+langchain-core>=0.3.28
+
+# ── Database ─────────────────────────────────────────────────
+asyncpg>=0.30.0
+psycopg[binary]>=3.2.0
+
+# ── HTTP client ──────────────────────────────────────────────
+httpx>=0.28.1
+
+# ── Configuration ────────────────────────────────────────────
+pydantic>=2.10.4
+pydantic-settings>=2.7.0
+python-dotenv>=1.0.1
+
+# ── Utilities ────────────────────────────────────────────────
+requests>=2.32.3
+tenacity>=9.0.0
