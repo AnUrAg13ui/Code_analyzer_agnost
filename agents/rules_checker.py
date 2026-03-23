@@ -9,7 +9,10 @@ from typing import Any, Dict, List, Tuple
 
 from utils.deepseek_local_client import LLMClient
 from services.context_builder import ContextBuilder
-from config.prompts.rules_checker import SYSTEM_PROMPT, FINDING_SCHEMA
+from utils.prompt_loader import load_prompt
+from utils.rules_loader import load_custom_rules
+
+SYSTEM_PROMPT, FINDING_SCHEMA = load_prompt("rules_checker")
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +33,7 @@ class RulesCheckerAgent:
         file_contexts: List[Dict[str, Any]],
         memory_context: str = "",
         active_rules: str = "",
+        role: str = "developer",
     ) -> Dict[str, Any]:
         """
         Run rules checking over all changed files.
@@ -45,13 +49,21 @@ class RulesCheckerAgent:
         all_findings: List[Dict[str, Any]] = []
         total_confidence = 0.0
         analyzed = 0
+        debug_context: List[Dict[str, Any]] = []
 
         async def analyze_file(file_ctx: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], float]:
             fp = file_ctx.get("file_path", "unknown")
             if file_ctx.get("status") == "removed":
                 return [], 0.0
 
-            prompt = self._build_prompt(file_ctx, memory_context, active_rules)
+            prompt = self._build_prompt(file_ctx, "", active_rules, role)
+            debug_context.append({
+                "file_path": fp,
+                "file_context": file_ctx,
+                "prompt": prompt,
+                "memory_context": "",
+                "active_rules": active_rules,
+            })
             try:
                 result = await self.llm.generate_structured(prompt, SYSTEM_PROMPT)
                 findings = result.get("findings", [])
@@ -62,6 +74,7 @@ class RulesCheckerAgent:
                     f["agent_name"] = self.AGENT_NAME
                     f["issue_type"] = self.ISSUE_TYPE
                     f["confidence"] = confidence
+                    f["role"] = role
                 
                 return findings, confidence
             except Exception as exc:
@@ -83,17 +96,64 @@ class RulesCheckerAgent:
             "findings": all_findings,
             "confidence": avg_confidence,
             "summary": f"Rules checker: {len(all_findings)} violations across {analyzed} files.",
+            "debug_context": debug_context,
         }
 
     def _build_prompt(
-        self, file_ctx: Dict[str, Any], memory_context: str, active_rules: str
+        self, file_ctx: Dict[str, Any], memory_context: str, active_rules: str, role: str
     ) -> str:
         code_fragment = ContextBuilder.build_rules_checker_fragment(file_ctx)
-        return f"""
-Analyze the following code changes for coding rule violations and bad practices using your own reasoning and best practices knowledge.
 
-{memory_context}
+        # Load user-defined custom rules from config/custom_rules.yaml
+        custom_rules_text = load_custom_rules()
+
+        role_instruction = f"""
+You are acting as a {role.upper()} engineer.
+
+Focus areas:
+"""
+
+        if role == "developer":
+            role_instruction += """
+- Code correctness
+- Logic errors
+- Maintainability
+- Readability
+"""
+        elif role == "devops":
+            role_instruction += """
+- Deployment risks
+- Environment/config issues
+- Scalability concerns
+- Missing retries, timeouts
+- Secrets exposure
+"""
+        elif role == "security":
+            role_instruction += """
+- Vulnerabilities
+- Injection risks
+- Authentication/authorization issues
+- Unsafe data handling
+"""
+
+        # Build the rules section — use custom rules if provided, else LLM defaults
+        if custom_rules_text:
+            rules_section = f"""## PROJECT RULES TO ENFORCE:
+{custom_rules_text}"""
+        else:
+            rules_section = """## RULES:
+Apply general software engineering best practices and your own expert knowledge
+to identify rule violations (naming, structure, patterns, etc.)."""
+
+        return f"""
+{role_instruction}
+
+{rules_section}
+
+## CODE TO REVIEW:
 {code_fragment}
 
+## OUTPUT FORMAT:
 {FINDING_SCHEMA}
 """.strip()
+

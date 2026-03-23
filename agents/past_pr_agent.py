@@ -10,7 +10,9 @@ from typing import Any, Dict, List, Tuple
 
 from utils.deepseek_local_client import LLMClient
 from services.context_builder import ContextBuilder
-from config.prompts.past_pr import SYSTEM_PROMPT, FINDING_SCHEMA
+from utils.prompt_loader import load_prompt
+
+SYSTEM_PROMPT, FINDING_SCHEMA = load_prompt("past_pr")
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,7 @@ class PastPRAgent:
         file_contexts: List[Dict[str, Any]],
         memory_context: str = "",
         repeated_issues: List[Dict] = None,
+        role: str = "developer",
     ) -> Dict[str, Any]:
         """
         Run repeated-mistake detection.
@@ -51,6 +54,7 @@ class PastPRAgent:
         all_findings: List[Dict[str, Any]] = []
         total_confidence = 0.0
         analyzed = 0
+        debug_context: List[Dict[str, Any]] = []
 
         async def analyze_file(file_ctx: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], float]:
             if file_ctx.get("status") == "removed":
@@ -65,7 +69,13 @@ class PastPRAgent:
                 # Still check with full context but lower weight
                 relevant = repeated_issues[:5]
 
-            prompt = self._build_prompt(file_ctx, memory_context, relevant)
+            prompt = self._build_prompt(file_ctx, "", relevant, role)
+            debug_context.append({
+                "file_path": file_ctx.get("file_path", "unknown"),
+                "file_context": file_ctx,
+                "prompt": prompt,
+                "relevant_issues": relevant,
+            })
             try:
                 result = await self.llm.generate_structured(prompt, SYSTEM_PROMPT)
                 findings = result.get("findings", [])
@@ -76,6 +86,7 @@ class PastPRAgent:
                     f["agent_name"] = self.AGENT_NAME
                     f["issue_type"] = self.ISSUE_TYPE
                     f["confidence"] = confidence
+                    f["role"] = role
                 
                 return findings, confidence
             except Exception as exc:
@@ -99,6 +110,7 @@ class PastPRAgent:
             "summary": (
                 f"Past PR checker: {len(all_findings)} repeated issues across {analyzed} files."
             ),
+            "debug_context": debug_context,
         }
 
     def _build_prompt(
@@ -106,24 +118,63 @@ class PastPRAgent:
         file_ctx: Dict[str, Any],
         memory_context: str,
         repeated_issues: List[Dict],
+        role: str,
     ) -> str:
         code_fragment = ContextBuilder.build_past_pr_fragment(file_ctx)
 
-        past_issues_text = "\n".join(
-            f"  - [{r['severity'].upper()}] {r['description'][:100]} "
-            f"(occurred {r.get('occurrences', 1)}x)"
-            for r in repeated_issues
-        )
+        # Build a rich, structured block of previous findings for the LLM
+        past_issues_lines = []
+        for idx, r in enumerate(repeated_issues, 1):
+            past_issues_lines.append(
+                f"[{idx}] Severity: {r.get('severity', 'unknown').upper()}\n"
+                f"    Type    : {r.get('issue_type', 'unknown')}\n"
+                f"    File    : {r.get('file_path', 'unknown')}\n"
+                f"    Seen    : {r.get('occurrences', 1)}x in previous PRs\n"
+                f"    Detail  : {r.get('description', 'No description')}"
+            )
+        past_issues_text = "\n\n".join(past_issues_lines) if past_issues_lines else "None recorded."
+
+        role_instruction = f"""
+You are acting as a {role.upper()} engineer.
+
+Focus areas:
+"""
+
+        if role == "developer":
+            role_instruction += """
+- Code correctness
+- Logic errors
+- Maintainability
+- Readability
+"""
+        elif role == "devops":
+            role_instruction += """
+- Deployment risks
+- Environment/config issues
+- Scalability concerns
+- Missing retries, timeouts
+- Secrets exposure
+"""
+        elif role == "security":
+            role_instruction += """
+- Vulnerabilities
+- Injection risks
+- Authentication/authorization issues
+- Unsafe data handling
+"""
 
         return f"""
-Analyze whether this code change repeats mistakes that were flagged in past pull requests.
+{role_instruction}
 
-## Previously Flagged Issues (from other PRs in this repo):
+Your task: Analyze the current code change below and determine if it repeats or
+resembles issues that were flagged in PREVIOUS pull requests of the same repository.
+
+## PREVIOUSLY FLAGGED ISSUES (from database of past PR reviews):
 {past_issues_text}
 
-{memory_context}
-
+## CURRENT CODE CHANGE:
 {code_fragment}
 
+## OUTPUT FORMAT:
 {FINDING_SCHEMA}
 """.strip()

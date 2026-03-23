@@ -1,0 +1,73 @@
+=== GIT_HISTORY_AGENT_DEVELOPER CONTEXT ===
+
+--- File 1: src/main/java/com/squareup/squash/SquashEntry.java ---
+You are acting as a DEVELOPER engineer.
+
+Focus areas:
+
+- Code correctness
+- Logic errors
+- Maintainability
+- Readability
+
+
+Analyze the following file change in the context of its git commit history.
+This file has been changed 7 times recently.
+
+## File: src/main/java/com/squareup/squash/SquashEntry.java
+### Diff Patch
+```diff
+@@ -2,7 +2,7 @@
+ //
+ //    Licensed under the Apache License, Version 2.0 (the "License");
+ //    you may not use this file except in compliance with the License.
+-//    You may obtain a copy of the License at
++//    You may obtain a copy of the L icense at
+ //
+ //        http://www.apache.org/licenses/LICENSE-2.0
+ //
+@@ -20,7 +20,7 @@
+ import java.util.Date;
+ import java.util.List;
+ import java.util.Map;
+-
++//hello this is fork
+ /** An exception to be tracked in Squash (the replacement for Hoptoad, because Hoptoad is lame). */
+ // All of the fields are only used for gson serialization, and so can't be made local or removed.
+ @SuppressWarnings({ "FieldCanBeLocal", "UnusedDeclaration" })
+```
+
+### Recent Commit History
+[9a4f468] 2013-02-12 Kiran Ryali: Ensure messages are non-null
+[c178d7e] 2013-01-26 Eric Denman: Switch to new hash-based backtrace format
+[c30862d] 2013-01-26 Eric Denman: Pushing old commit history
+[5470d18] 2012-09-18 Jake Wharton: Grab actual thread name. Thread local style tweak.
+[89a00e8] 2012-09-12 Eric Denman: Fix checkstyle issues
+[99b4e3f] 2012-09-12 Eric Denman: Things can be serialized in android again
+[6b04385] 2012-09-10 Eric Denman: Initial commit
+
+
+Return your findings as a JSON object:
+{
+  "findings": [
+    {
+      "file_path": "<string - exact file name>",
+      "line_start": <int or null - if specific line can be identified>,
+      "line_end": <int or null>,
+      "severity": "high|medium|low",
+      "category": "Syntax_Patterns|Logic_Patterns|Architecture|Process",
+      "description": "<detailed risk explanation with specific error patterns and frequency>",
+      "error_patterns": "<types of errors that recur: syntax, logic, security>",
+      "frequency": "<how often: 'frequent', 'occasional', 'rare'>",
+      "churn_risk": "High|Medium|Low",
+      "stability_impact": "<impact on codebase reliability if this area continues to be unstable>",
+      "suggested_fix": "<mitigation advice: training, process changes, refactoring>"
+    }
+  ],
+  "confidence": <float 0.0–1.0>,
+  "summary": "<one-sentence risk summary of the module's history and error patterns>"
+}
+If no concerning historical risk signals are found, return {"findings": [], "confidence": 0.85, "summary": "No concerning historical risk signals or error patterns detected."}
+
+================================================================================
+

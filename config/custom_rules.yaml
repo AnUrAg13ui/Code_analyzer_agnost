@@ -1,0 +1,54 @@
+# ============================================================
+# Custom Coding Rules for the Rules Checker Agent
+# ============================================================
+# Add your project-specific rules below.
+# Each rule has:
+#   - name        : short identifier (used in findings)
+#   - severity    : high | medium | low
+#   - description : what to check for (LLM reads this directly)
+#
+# Rules defined here are injected into the LLM's prompt so it
+# enforces them during every PR analysis.
+# ============================================================
+
+rules:
+  - name: no-hardcoded-secrets
+    severity: high
+    description: >
+      API keys, passwords, tokens, and secrets must never be hardcoded
+      in source files. Use environment variables or secret managers instead.
+
+  - name: no-sql-injection
+    severity: high
+    description: >
+      All database queries must use parameterised statements or ORM methods.
+      Never concatenate user input directly into SQL strings.
+
+  - name: no-bare-except
+    severity: medium
+    description: >
+      Bare 'except:' clauses must not be used. Always specify the exception
+      type to avoid swallowing unexpected errors silently.
+
+  - name: single-responsibility
+    severity: medium
+    description: >
+      Every function or class should have a single, well-defined responsibility.
+      Flag any function that does more than one conceptually distinct thing.
+
+  - name: max-function-length
+    severity: low
+    description: >
+      Functions should not exceed 50 logical lines. Long functions are hard to
+      test, review, and maintain. Suggest breaking them down.
+
+  - name: docstring-required
+    severity: low
+    description: >
+      All public functions and classes must have a docstring explaining their
+      purpose, parameters, and return values.
+
+  # ── Add your own project-specific rules below ─────────────
+  # - name: your-rule-name
+  #   severity: high | medium | low
+  #   description: What the LLM should check for.

@@ -76,11 +76,12 @@ class Settings(BaseSettings):
     # ── Analysis tuning ───────────────────────────────────────────
     CONFIDENCE_THRESHOLD: float = 0.65   # minimum score to surface a finding
     MAX_FILES_PER_PR: int = 50
-    MAX_DIFF_LINES: int = 3000
-    PARALLEL_AGENT_TIMEOUT: int = 600    # seconds before cancelling an agent
+    MAX_DIFF_LINES: int = 1000    # Reduced from 3000 to speed up processing
+    PARALLEL_AGENT_TIMEOUT: int = 180    # Reduced from 600s to 3min for faster feedback
 
     # TEST 
-    ACTIVE_AGENTS: str = "bug_detector"
+    ACTIVE_AGENTS: str = "bug_detector"   # comma-separated list of active agents for testing
+    ANALYSIS_ROLE: str = "developer"      # "developer", "devops", or "security"
     # ── Severity weights (used in confidence scoring) ─────────────
     SEVERITY_WEIGHTS: dict = {
         "high": 1.0,

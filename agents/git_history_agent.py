@@ -9,7 +9,9 @@ from typing import Any, Dict, List, Tuple
 
 from utils.deepseek_local_client import LLMClient
 from services.context_builder import ContextBuilder
-from config.prompts.git_history import SYSTEM_PROMPT, FINDING_SCHEMA
+from utils.prompt_loader import load_prompt
+
+SYSTEM_PROMPT, FINDING_SCHEMA = load_prompt("git_history")
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,7 @@ class GitHistoryAgent:
         self,
         file_contexts: List[Dict[str, Any]],
         memory_context: str = "",
+        role: str = "developer",
     ) -> Dict[str, Any]:
         """
         Run history-based risk analysis over all changed files.
@@ -37,6 +40,7 @@ class GitHistoryAgent:
         all_findings: List[Dict[str, Any]] = []
         total_confidence = 0.0
         analyzed = 0
+        debug_context: List[Dict[str, Any]] = []
 
         async def analyze_file(file_ctx: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], float]:
             commit_summary = file_ctx.get("commit_summary", "")
@@ -46,7 +50,14 @@ class GitHistoryAgent:
             if not commit_summary or commit_count < 2:
                 return [], 0.0
 
-            prompt = self._build_prompt(file_ctx, memory_context)
+            prompt = self._build_prompt(file_ctx, "", role)
+            debug_context.append({
+                "file_path": file_ctx.get("file_path", "unknown"),
+                "file_context": file_ctx,
+                "prompt": prompt,
+                "commit_summary": commit_summary,
+                "commit_count": commit_count,
+            })
             try:
                 result = await self.llm.generate_structured(prompt, SYSTEM_PROMPT)
                 findings = result.get("findings", [])
@@ -57,6 +68,7 @@ class GitHistoryAgent:
                     f["agent_name"] = self.AGENT_NAME
                     f["issue_type"] = self.ISSUE_TYPE
                     f["confidence"] = confidence
+                    f["role"] = role
                 
                 return findings, confidence
             except Exception as exc:
@@ -80,17 +92,47 @@ class GitHistoryAgent:
             "summary": (
                 f"Git history: {len(all_findings)} risk signals across {analyzed} files."
             ),
+            "debug_context": debug_context,
         }
 
-    def _build_prompt(self, file_ctx: Dict[str, Any], memory_context: str) -> str:
+    def _build_prompt(self, file_ctx: Dict[str, Any], memory_context: str, role: str) -> str:
         code_fragment = ContextBuilder.build_git_history_fragment(file_ctx)
         commit_count = file_ctx.get("previous_commit_count", 0)
+        
+        role_instruction = f"""
+You are acting as a {role.upper()} engineer.
+
+Focus areas:
+"""
+
+        if role == "developer":
+            role_instruction += """
+- Code correctness
+- Logic errors
+- Maintainability
+- Readability
+"""
+        elif role == "devops":
+            role_instruction += """
+- Deployment risks
+- Environment/config issues
+- Scalability concerns
+- Missing retries, timeouts
+- Secrets exposure
+"""
+        elif role == "security":
+            role_instruction += """
+- Vulnerabilities
+- Injection risks
+- Authentication/authorization issues
+- Unsafe data handling
+"""
 
         return f"""
+{role_instruction}
+
 Analyze the following file change in the context of its git commit history.
 This file has been changed {commit_count} times recently.
-
-{memory_context}
 
 {code_fragment}
 

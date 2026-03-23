@@ -226,6 +226,46 @@ async def manual_analyze(
     }
 
 
+@app.post("/debug/analyze")
+async def debug_analyze(owner: str, repo: str, pr_number: int):
+    """Run full workflow synchronously and return context + agent data for UI debugging."""
+    logger.info("Debug full analysis triggered for %s/%s PR #%d", owner, repo, pr_number)
+    state = await run_review_workflow(owner, repo, pr_number, "github")
+
+    agent_results = {
+        "bug": state.get("bug_results", {}),
+        "rules": state.get("rules_results", {}),
+        "history": state.get("history_results", {}),
+        "past_pr": state.get("past_pr_results", {}),
+        "comment": state.get("comment_results", {}),
+    }
+
+    def extract_file_contexts(agent_data: Dict[str, Any]):
+        debug_entries = agent_data.get("debug_context", []) or []
+        return [entry.get("file_context") for entry in debug_entries if entry.get("file_context")]
+
+    agent_initial_file_contexts = {
+        key: extract_file_contexts(value) for key, value in agent_results.items()
+    }
+
+    return {
+        "status": "ok",
+        "owner": owner,
+        "repo": repo,
+        "pr_number": pr_number,
+        "pr_context": state.get("pr_context", {}),
+        "file_contexts": state.get("file_contexts", []),
+        "memory_context_raw": state.get("memory_context_raw", {}),
+        "memory_context_text": state.get("memory_context_text", ""),
+        "agent_results": agent_results,
+        "agent_initial_file_contexts": agent_initial_file_contexts,
+        "all_findings": state.get("all_findings", []),
+        "report_summary": state.get("report_summary", ""),
+        "avg_confidence": state.get("avg_confidence", 0.0),
+        "error": state.get("error"),
+    }
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Dashboard API Endpoints
 # ──────────────────────────────────────────────────────────────────────────────

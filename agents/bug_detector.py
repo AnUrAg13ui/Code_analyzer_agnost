@@ -10,7 +10,9 @@ from typing import Any, Dict, List, Tuple
 
 from utils.deepseek_local_client import LLMClient
 from services.context_builder import ContextBuilder
-from config.prompts.bug_detector import SYSTEM_PROMPT, FINDING_SCHEMA
+from utils.prompt_loader import load_prompt
+
+SYSTEM_PROMPT, FINDING_SCHEMA = load_prompt("bug_detector")
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,7 @@ class BugDetectorAgent:
         self,
         file_contexts: List[Dict[str, Any]],
         memory_context: str = "",
+        role: str = "developer",
     ) -> Dict[str, Any]:
         """
         Run bug detection over all changed files.
@@ -45,6 +48,7 @@ class BugDetectorAgent:
         all_findings: List[Dict[str, Any]] = []
         total_confidence = 0.0
         analyzed = 0
+        debug_context: List[Dict[str, Any]] = []
 
         logger.info("BugDetectorAgent initiating parallel analysis for %d files.", len(file_contexts))
 
@@ -56,7 +60,13 @@ class BugDetectorAgent:
 
             logger.info("BugDetectorAgent analyzing file: %s", fp)
             # Disable memory context (previous findings) for bug detector
-            prompt = self._build_prompt(file_ctx, "")
+            prompt = self._build_prompt(file_ctx, "", role)
+            debug_context.append({
+                "file_path": fp,
+                "file_context": file_ctx,
+                "prompt": prompt,
+                "memory_context": "",
+            })
             try:
                 result = await self.llm.generate_structured(prompt, SYSTEM_PROMPT)
                 logger.info("BugDetectorAgent received results for: %s", fp)
@@ -69,6 +79,7 @@ class BugDetectorAgent:
                     f["agent_name"] = self.AGENT_NAME
                     f["issue_type"] = self.ISSUE_TYPE
                     f["confidence"] = confidence
+                    f["role"] = role
                 
                 return findings, confidence
             except Exception as exc:
@@ -90,12 +101,45 @@ class BugDetectorAgent:
             "findings": all_findings,
             "confidence": avg_confidence,
             "summary": f"Bug detector: {len(all_findings)} findings across {analyzed} files.",
+            "debug_context": debug_context,
         }
 
-    def _build_prompt(self, file_ctx: Dict[str, Any], memory_context: str) -> str:
+    def _build_prompt(self, file_ctx: Dict[str, Any], memory_context: str, role: str) -> str:
         code_fragment = ContextBuilder.build_bug_detector_fragment(file_ctx)
+        
+        role_instruction = f"""
+You are acting as a {role.upper()} engineer.
+
+Focus areas:
+"""
+
+        if role == "developer":
+            role_instruction += """
+- Code correctness
+- Logic errors
+- Maintainability
+- Readability
+"""
+        elif role == "devops":
+            role_instruction += """
+- Deployment risks
+- Environment/config issues
+- Scalability concerns
+- Missing retries, timeouts
+- Secrets exposure
+"""
+        elif role == "security":
+            role_instruction += """
+- Vulnerabilities
+- Injection risks
+- Authentication/authorization issues
+- Unsafe data handling
+"""
+        
         return f"""
-Analyze the following code changes for bugs, vulnerabilities, and unsafe patterns.
+{role_instruction}
+
+Analyze the following code changes for issues:
 
 {memory_context}
 

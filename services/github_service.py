@@ -217,11 +217,11 @@ class GitHubService(GitProvider):
         """
         signature_header = request.headers.get("X-Hub-Signature-256", "")
         secret = settings.GITHUB_WEBHOOK_SECRET
-        if not secret:
-            logger.warning(
-                "GITHUB_WEBHOOK_SECRET not set; skipping signature verification"
-            )
-            return True  # Allow through in dev mode
+        # if not secret:
+        #     logger.warning(
+        #         "GITHUB_WEBHOOK_SECRET not set; skipping signature verification"
+        #     )
+        #     return True  # Allow through in dev mode
 
         if not signature_header or not signature_header.startswith("sha256="):
             return False

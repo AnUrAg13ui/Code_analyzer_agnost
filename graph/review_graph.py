@@ -194,15 +194,28 @@ async def memory_node(state: GraphState) -> GraphState:
             logger.exception("Agent '%s' raised: %s", name, exc)
             return {"agent_name": name, "findings": [], "confidence": 0.0, "summary": str(exc)}
 
-    bug_task = safe_run(bug_agent.analyze(file_contexts, memory_text), "bug_detector")
+    ROLES = [getattr(settings, "ANALYSIS_ROLE", "developer")]
+    bug_tasks = [
+        safe_run(bug_agent.analyze(file_contexts, memory_text, role=role), f"bug_detector_{role}")
+        for role in ROLES
+    ]
     rules_task = safe_run(rules_agent.analyze(file_contexts, memory_text, rules_text), "rules_checker")
     history_task = safe_run(history_agent.analyze(file_contexts, memory_text), "git_history_agent")
     past_task = safe_run(past_pr_agent_inst.analyze(file_contexts, memory_text, repeated), "past_pr_agent")
     comment_task = safe_run(comment_agent.analyze(file_contexts, memory_text), "comment_verifier")
 
-    bug_res, rules_res, hist_res, past_res, comment_res = await asyncio.gather(
-        bug_task, rules_task, history_task, past_task, comment_task
+    agent_results = await asyncio.gather(
+        *bug_tasks, rules_task, history_task, past_task, comment_task
     )
+    
+    bug_res = {"findings": []}
+    for i in range(len(ROLES)):
+        bug_res["findings"].extend(agent_results[i].get("findings", []))
+        
+    rules_res = agent_results[len(ROLES)]
+    hist_res = agent_results[len(ROLES) + 1]
+    past_res = agent_results[len(ROLES) + 2]
+    comment_res = agent_results[len(ROLES) + 3]
 
     logger.info(
         "Agents done — bugs:%d rules:%d history:%d past:%d docs:%d",
@@ -229,7 +242,7 @@ async def _run_agents_parallel(state: GraphState) -> GraphState:
     Agents are controlled via ACTIVE_AGENTS list.
     """
 
-    ACTIVE_AGENTS = ["bug_detector"]   # change this for testing
+    ACTIVE_AGENTS = ["bug_detector", "rules_checker", "git_history_agent", "past_pr_agent", "comment_verifier"]   # change this for testing
 
     logger.info(
         "Launching %d selected agents for %d files...",
@@ -300,55 +313,67 @@ async def _run_agents_parallel(state: GraphState) -> GraphState:
 
     tasks = []
     agent_names = []
+    ROLES = [getattr(settings, "ANALYSIS_ROLE", "developer")]
 
     if "bug_detector" in ACTIVE_AGENTS:
-        tasks.append(
-            safe_run(
-                bug_agent.analyze(file_contexts, memory_text),
-                "bug_detector",
+        logger.info("🔧 Adding bug_detector tasks for roles")
+        for role in ROLES:
+            tasks.append(
+                safe_run(
+                    bug_agent.analyze(file_contexts, memory_text, role=role),
+                    f"bug_detector_{role}",
+                )
             )
-        )
-        agent_names.append("bug_detector")
+            agent_names.append(f"bug_detector_{role}")
 
     if "rules_checker" in ACTIVE_AGENTS:
-        tasks.append(
-            safe_run(
-                rules_agent.analyze(file_contexts, memory_text, rules_text),
-                "rules_checker",
+        logger.info("🔧 Adding rules_checker tasks for roles")
+        for role in ROLES:
+            tasks.append(
+                safe_run(
+                    rules_agent.analyze(file_contexts, memory_text, rules_text, role=role),
+                    f"rules_checker_{role}",
+                )
             )
-        )
-        agent_names.append("rules_checker")
+            agent_names.append(f"rules_checker_{role}")
 
     if "git_history_agent" in ACTIVE_AGENTS:
-        tasks.append(
-            safe_run(
-                history_agent.analyze(file_contexts, memory_text),
-                "git_history_agent",
+        logger.info("🔧 Adding git_history_agent tasks for roles")
+        for role in ROLES:
+            tasks.append(
+                safe_run(
+                    history_agent.analyze(file_contexts, memory_text, role=role),
+                    f"git_history_agent_{role}",
+                )
             )
-        )
-        agent_names.append("git_history_agent")
+            agent_names.append(f"git_history_agent_{role}")
 
     if "past_pr_agent" in ACTIVE_AGENTS:
-        tasks.append(
-            safe_run(
-                past_pr_agent_inst.analyze(
-                    file_contexts,
-                    memory_text,
-                    repeated,
-                ),
-                "past_pr_agent",
+        logger.info("🔧 Adding past_pr_agent tasks for roles")
+        for role in ROLES:
+            tasks.append(
+                safe_run(
+                    past_pr_agent_inst.analyze(
+                        file_contexts,
+                        memory_text,
+                        repeated,
+                        role=role,
+                    ),
+                    f"past_pr_agent_{role}",
+                )
             )
-        )
-        agent_names.append("past_pr_agent")
+            agent_names.append(f"past_pr_agent_{role}")
 
     if "comment_verifier" in ACTIVE_AGENTS:
-        tasks.append(
-            safe_run(
-                comment_agent.analyze(file_contexts, memory_text),
-                "comment_verifier",
+        logger.info("🔧 Adding comment_verifier tasks for roles")
+        for role in ROLES:
+            tasks.append(
+                safe_run(
+                    comment_agent.analyze(file_contexts, memory_text, role=role),
+                    f"comment_verifier_{role}",
+                )
             )
-        )
-        agent_names.append("comment_verifier")
+            agent_names.append(f"comment_verifier_{role}")
 
     if not tasks:
         logger.warning("No agents selected to run.")
@@ -358,21 +383,51 @@ async def _run_agents_parallel(state: GraphState) -> GraphState:
 
     result_map = dict(zip(agent_names, results))
 
-    bug_res = result_map.get("bug_detector", {"findings": []})
-    rules_res = result_map.get("rules_checker", {"findings": []})
-    hist_res = result_map.get("git_history_agent", {"findings": []})
-    past_res = result_map.get("past_pr_agent", {"findings": []})
-    comment_res = result_map.get("comment_verifier", {"findings": []})
+    # Dump contexts for debugging/visibility
+    import os
+    dump_dir = "agent_contexts"
+    os.makedirs(dump_dir, exist_ok=True)
+    
+    for agent_task_name, res in result_map.items():
+        debug_ctx = res.get("debug_context", [])
+        if debug_ctx:
+            filepath = os.path.join(dump_dir, f"{agent_task_name}_context.txt")
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(f"=== {agent_task_name.upper()} CONTEXT ===\n\n")
+                for i, ctx in enumerate(debug_ctx):
+                    f.write(f"--- File {i+1}: {ctx.get('file_path', 'unknown')} ---\n")
+                    f.write(ctx.get("prompt", "No prompt found"))
+                    f.write("\n\n" + "="*80 + "\n\n")
+
+    bug_res = {"findings": []}
+    rules_res = {"findings": []}
+    hist_res = {"findings": []}
+    past_res = {"findings": []}
+    comment_res = {"findings": []}
+    
+    for role in ROLES:
+        bug_res["findings"].extend(result_map.get(f"bug_detector_{role}", {"findings": []}).get("findings", []))
+        rules_res["findings"].extend(result_map.get(f"rules_checker_{role}", {"findings": []}).get("findings", []))
+        hist_res["findings"].extend(result_map.get(f"git_history_agent_{role}", {"findings": []}).get("findings", []))
+        past_res["findings"].extend(result_map.get(f"past_pr_agent_{role}", {"findings": []}).get("findings", []))
+        comment_res["findings"].extend(result_map.get(f"comment_verifier_{role}", {"findings": []}).get("findings", []))
+
+    bug_count = len(bug_res.get("findings", []))
+    rules_count = len(rules_res.get("findings", []))
+    hist_count = len(hist_res.get("findings", []))
+    past_count = len(past_res.get("findings", []))
+    comment_count = len(comment_res.get("findings", []))
 
     logger.info(
         "Agents done — bugs:%d rules:%d history:%d past:%d docs:%d",
-        len(bug_res.get("findings", [])),
-        len(rules_res.get("findings", [])),
-        len(hist_res.get("findings", [])),
-        len(past_res.get("findings", [])),
-        len(comment_res.get("findings", [])),
-
+        bug_count, rules_count, hist_count, past_count, comment_count,
     )
+
+    logger.debug("Bug results: %s", bug_res)
+    logger.debug("Rules results: %s", rules_res)
+    logger.debug("History results: %s", hist_res)
+    logger.debug("Past PR results: %s", past_res)
+    logger.debug("Comment results: %s", comment_res)
 
     return {
         **state,
@@ -394,7 +449,13 @@ async def aggregator_node(state: GraphState) -> GraphState:
 
     for key in ("bug_results", "rules_results", "history_results", "past_pr_results", "comment_results"):
         result = state.get(key, {})
-        all_findings.extend(result.get("findings", []))
+        findings = result.get("findings", [])
+        agent_name = result.get("agent_name", key)
+        logger.info(
+            "📊 Aggregator collecting findings from %s: %d findings",
+            agent_name, len(findings)
+        )
+        all_findings.extend(findings)
 
     # Deduplicate by (file_path, description[:60]) to avoid near-duplicates
     seen = set()

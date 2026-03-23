@@ -49,6 +49,10 @@ export default function RootLayout({
               <span className="text-lg">🚀</span>
               <span className="font-medium">Force Scan</span>
             </a>
+            <a href="/testing_frontend" className="flex items-center space-x-3 px-4 py-2 rounded-lg hover:bg-white/5 transition-colors">
+              <span className="text-lg">🧪</span>
+              <span className="font-medium">Testing UI</span>
+            </a>
             <a href="/rules" className="flex items-center space-x-3 px-4 py-2 rounded-lg hover:bg-white/5 transition-colors">
               <span className="text-lg">🛡️</span>
               <span className="font-medium">Coding Rules</span>
