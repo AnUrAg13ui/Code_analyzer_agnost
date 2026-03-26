@@ -11,27 +11,9 @@ Focus areas:
 - Readability
 
 
-## PROJECT RULES TO ENFORCE:
-The following project-specific rules MUST be enforced:
-
-  [1] [HIGH] no-hardcoded-secrets
-       → API keys, passwords, tokens, and secrets must never be hardcoded in source files. Use environment variables or secret managers instead.
-
-  [2] [HIGH] no-sql-injection
-       → All database queries must use parameterised statements or ORM methods. Never concatenate user input directly into SQL strings.
-
-  [3] [MEDIUM] no-bare-except
-       → Bare 'except:' clauses must not be used. Always specify the exception type to avoid swallowing unexpected errors silently.
-
-  [4] [MEDIUM] single-responsibility
-       → Every function or class should have a single, well-defined responsibility. Flag any function that does more than one conceptually distinct thing.
-
-  [5] [LOW] max-function-length
-       → Functions should not exceed 50 logical lines. Long functions are hard to test, review, and maintain. Suggest breaking them down.
-
-  [6] [LOW] docstring-required
-       → All public functions and classes must have a docstring explaining their purpose, parameters, and return values.
-
+## RULES:
+Apply general software engineering best practices and your own expert knowledge
+to identify rule violations (naming, structure, patterns, etc.).
 
 ## CODE TO REVIEW:
 ## File: main.py

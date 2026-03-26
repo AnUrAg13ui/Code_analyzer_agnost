@@ -5,7 +5,7 @@ Identifies risky modules based on commit frequency, churn, and historical bug de
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, cast
 
 from utils.deepseek_local_client import LLMClient
 from services.context_builder import ContextBuilder
@@ -38,8 +38,6 @@ class GitHistoryAgent:
         Only processes files that have meaningful commit history data.
         """
         all_findings: List[Dict[str, Any]] = []
-        total_confidence = 0.0
-        analyzed = 0
         debug_context: List[Dict[str, Any]] = []
 
         async def analyze_file(file_ctx: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], float]:
@@ -78,13 +76,15 @@ class GitHistoryAgent:
         tasks = [analyze_file(ctx) for ctx in file_contexts]
         results = await asyncio.gather(*tasks)
 
-        for findings, confidence in results:
-            if findings or confidence > 0:
-                all_findings.extend(findings)
-                total_confidence += confidence
-                analyzed += 1
+        valid_results: List[Tuple[List[Dict[str, Any]], float]] = [
+            (f, c) for f, c in results if f or c > 0
+        ]
+        for findings, _ in valid_results:
+            all_findings.extend(findings)
+        analyzed: int = len(valid_results)
+        total_confidence: float = sum(c for _, c in valid_results)
 
-        avg_confidence = total_confidence / analyzed if analyzed else 0.0
+        avg_confidence: float = total_confidence / analyzed if analyzed else 0.0
         return {
             "agent_name": self.AGENT_NAME,
             "findings": all_findings,
@@ -98,39 +98,8 @@ class GitHistoryAgent:
     def _build_prompt(self, file_ctx: Dict[str, Any], memory_context: str, role: str) -> str:
         code_fragment = ContextBuilder.build_git_history_fragment(file_ctx)
         commit_count = file_ctx.get("previous_commit_count", 0)
-        
-        role_instruction = f"""
-You are acting as a {role.upper()} engineer.
-
-Focus areas:
-"""
-
-        if role == "developer":
-            role_instruction += """
-- Code correctness
-- Logic errors
-- Maintainability
-- Readability
-"""
-        elif role == "devops":
-            role_instruction += """
-- Deployment risks
-- Environment/config issues
-- Scalability concerns
-- Missing retries, timeouts
-- Secrets exposure
-"""
-        elif role == "security":
-            role_instruction += """
-- Vulnerabilities
-- Injection risks
-- Authentication/authorization issues
-- Unsafe data handling
-"""
 
         return f"""
-{role_instruction}
-
 Analyze the following file change in the context of its git commit history.
 This file has been changed {commit_count} times recently.
 

@@ -5,6 +5,9 @@ as a structured text block ready to be injected into the RulesChecker prompt.
 
 Rules are cached after the first read. To hot-reload rules without restarting
 the server, call clear_cache() and then load_custom_rules() again.
+
+The APPLY_CUSTOM_RULES env var (default: true) controls whether custom rules
+are loaded at all. Set to false to let the LLM use its own expert defaults.
 """
 
 import pathlib
@@ -13,6 +16,8 @@ from functools import lru_cache
 from typing import List, Dict
 
 import yaml
+
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +56,20 @@ def load_custom_rules() -> str:
     formatted = "\n".join(lines)
     logger.info("Loaded %d custom rules from %s", len(rules), RULES_FILE)
     return formatted
+
+
+def get_custom_rules_text() -> str:
+    """
+    Return the custom rules text, respecting the APPLY_CUSTOM_RULES setting.
+
+    When APPLY_CUSTOM_RULES=false in .env, this returns "" immediately so the
+    RulesChecker falls back to the LLM's built-in best practices.
+    """
+    settings = get_settings()
+    if not settings.APPLY_CUSTOM_RULES:
+        logger.info("APPLY_CUSTOM_RULES=false — skipping custom_rules.yaml.")
+        return ""
+    return load_custom_rules()
 
 
 def clear_cache() -> None:

@@ -1,16 +1,6 @@
 === COMMENT_VERIFIER_DEVELOPER CONTEXT ===
 
 --- File 1: main.py ---
-You are acting as a DEVELOPER engineer.
-
-Focus areas:
-
-- Code correctness
-- Logic errors
-- Maintainability
-- Readability
-
-
 Check whether the comments and documentation in the following code changes
 are accurate and consistent with the actual implementation.
 

@@ -5,12 +5,12 @@ Detects coding style violations, naming issues, architecture violations, and bad
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, cast
 
 from utils.deepseek_local_client import LLMClient
 from services.context_builder import ContextBuilder
 from utils.prompt_loader import load_prompt
-from utils.rules_loader import load_custom_rules
+from utils.rules_loader import get_custom_rules_text
 
 SYSTEM_PROMPT, FINDING_SCHEMA = load_prompt("rules_checker")
 
@@ -47,8 +47,6 @@ class RulesCheckerAgent:
             Dict with 'findings', 'confidence', 'summary', 'agent_name'.
         """
         all_findings: List[Dict[str, Any]] = []
-        total_confidence = 0.0
-        analyzed = 0
         debug_context: List[Dict[str, Any]] = []
 
         async def analyze_file(file_ctx: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], float]:
@@ -84,13 +82,15 @@ class RulesCheckerAgent:
         tasks = [analyze_file(ctx) for ctx in file_contexts]
         results = await asyncio.gather(*tasks)
 
-        for findings, confidence in results:
-            if findings or confidence > 0:
-                all_findings.extend(findings)
-                total_confidence += confidence
-                analyzed += 1
+        valid_results: List[Tuple[List[Dict[str, Any]], float]] = [
+            (f, c) for f, c in results if f or c > 0
+        ]
+        for findings, _ in valid_results:
+            all_findings.extend(findings)
+        analyzed: int = len(valid_results)
+        total_confidence: float = sum(c for _, c in valid_results)
 
-        avg_confidence = total_confidence / analyzed if analyzed else 0.0
+        avg_confidence: float = total_confidence / analyzed if analyzed else 0.0
         return {
             "agent_name": self.AGENT_NAME,
             "findings": all_findings,
@@ -104,8 +104,8 @@ class RulesCheckerAgent:
     ) -> str:
         code_fragment = ContextBuilder.build_rules_checker_fragment(file_ctx)
 
-        # Load user-defined custom rules from config/custom_rules.yaml
-        custom_rules_text = load_custom_rules()
+        # Load user-defined custom rules — honours APPLY_CUSTOM_RULES setting
+        custom_rules_text = get_custom_rules_text()
 
         role_instruction = f"""
 You are acting as a {role.upper()} engineer.

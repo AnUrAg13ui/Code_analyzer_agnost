@@ -5,8 +5,9 @@ Uses historical findings from PostgreSQL as primary signal.
 """
 
 import asyncio
+import itertools
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 from utils.deepseek_local_client import LLMClient
 from services.context_builder import ContextBuilder
@@ -32,7 +33,7 @@ class PastPRAgent:
         self,
         file_contexts: List[Dict[str, Any]],
         memory_context: str = "",
-        repeated_issues: List[Dict] = None,
+        repeated_issues: Optional[List[Dict[str, Any]]] = None,
         role: str = "developer",
     ) -> Dict[str, Any]:
         """
@@ -50,10 +51,10 @@ class PastPRAgent:
                 "confidence": 0.9,
                 "summary": "No past PR data available for comparison.",
             }
+        # Rebind to a concrete type — Pyre2 doesn't narrow Optional through closures
+        _issues: List[Dict[str, Any]] = list(repeated_issues)
 
         all_findings: List[Dict[str, Any]] = []
-        total_confidence = 0.0
-        analyzed = 0
         debug_context: List[Dict[str, Any]] = []
 
         async def analyze_file(file_ctx: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], float]:
@@ -62,12 +63,12 @@ class PastPRAgent:
 
             # Filter repeated issues relevant to this file
             relevant = [
-                r for r in repeated_issues
+                r for r in _issues
                 if r.get("file_path") == file_ctx["file_path"]
             ]
             if not relevant:
                 # Still check with full context but lower weight
-                relevant = repeated_issues[:5]
+                relevant = list(itertools.islice(_issues, 5))
 
             prompt = self._build_prompt(file_ctx, "", relevant, role)
             debug_context.append({
@@ -96,13 +97,15 @@ class PastPRAgent:
         tasks = [analyze_file(ctx) for ctx in file_contexts]
         results = await asyncio.gather(*tasks)
 
-        for findings, confidence in results:
-            if findings or confidence > 0:
-                all_findings.extend(findings)
-                total_confidence += confidence
-                analyzed += 1
+        valid_results: List[Tuple[List[Dict[str, Any]], float]] = [
+            (f, c) for f, c in results if f or c > 0
+        ]
+        for findings, _ in valid_results:
+            all_findings.extend(findings)
+        analyzed: int = len(valid_results)
+        total_confidence: float = sum(c for _, c in valid_results)
 
-        avg_confidence = total_confidence / analyzed if analyzed else 0.0
+        avg_confidence: float = total_confidence / analyzed if analyzed else 0.0
         return {
             "agent_name": self.AGENT_NAME,
             "findings": all_findings,
@@ -134,38 +137,7 @@ class PastPRAgent:
             )
         past_issues_text = "\n\n".join(past_issues_lines) if past_issues_lines else "None recorded."
 
-        role_instruction = f"""
-You are acting as a {role.upper()} engineer.
-
-Focus areas:
-"""
-
-        if role == "developer":
-            role_instruction += """
-- Code correctness
-- Logic errors
-- Maintainability
-- Readability
-"""
-        elif role == "devops":
-            role_instruction += """
-- Deployment risks
-- Environment/config issues
-- Scalability concerns
-- Missing retries, timeouts
-- Secrets exposure
-"""
-        elif role == "security":
-            role_instruction += """
-- Vulnerabilities
-- Injection risks
-- Authentication/authorization issues
-- Unsafe data handling
-"""
-
         return f"""
-{role_instruction}
-
 Your task: Analyze the current code change below and determine if it repeats or
 resembles issues that were flagged in PREVIOUS pull requests of the same repository.
 

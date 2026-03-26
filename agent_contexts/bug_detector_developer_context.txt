@@ -1,19 +1,7 @@
 === BUG_DETECTOR_DEVELOPER CONTEXT ===
 
 --- File 1: main.py ---
-You are acting as a DEVELOPER engineer.
-
-Focus areas:
-
-- Code correctness
-- Logic errors
-- Maintainability
-- Readability
-
-
-Analyze the following code changes for issues:
-
-
+Analyze the following code changes for bugs, vulnerabilities, and unsafe patterns:
 
 ## File: main.py
 Status: modified | +4 / -4 lines

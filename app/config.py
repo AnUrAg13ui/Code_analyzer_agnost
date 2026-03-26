@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = ""    # API key if your override endpoint needs one
 
     # ── Shared inference parameters ───────────────────────────────
-    LLM_TIMEOUT: int = 120
+    LLM_TIMEOUT: int = 5000
     LLM_MAX_TOKENS: int = 4096
     LLM_TEMPERATURE: float = 0.1   # low → deterministic code analysis
     LLM_MAX_CONCURRENCY: int = 3   # simultaneous requests to local provider
@@ -77,7 +77,11 @@ class Settings(BaseSettings):
     CONFIDENCE_THRESHOLD: float = 0.65   # minimum score to surface a finding
     MAX_FILES_PER_PR: int = 50
     MAX_DIFF_LINES: int = 1000    # Reduced from 3000 to speed up processing
-    PARALLEL_AGENT_TIMEOUT: int = 180    # Reduced from 600s to 3min for faster feedback
+    PARALLEL_AGENT_TIMEOUT: int = 50000    # Reduced from 50000s to 3min for faster feedback
+
+    # ── Rules Checker ─────────────────────────────────────────────
+    # When False, custom_rules.yaml is ignored and the LLM uses its own defaults.
+    APPLY_CUSTOM_RULES: bool = True
 
     # TEST 
     ACTIVE_AGENTS: str = "bug_detector"   # comma-separated list of active agents for testing
